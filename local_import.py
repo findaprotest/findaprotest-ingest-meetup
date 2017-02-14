@@ -1,95 +1,50 @@
 import os
 import requests
-import pymysql.cursors
 import json
+import time
 
-if "MARIADB_HOST" in os.environ:
-    mariadb_host = os.environ["MARIADB_HOST"]
+if "MEETUP_API_KEY" in os.environ:
+    meetup_api_key = os.environ["MEETUP_API_KEY"]
 else:
-    mariadb_host = "localhost"
+    raise AttributeError('MEETUP_API_KEY is a required environment variable')
 
-if "MARIADB_USER" in os.environ:
-    mariadb_user = os.environ["MARIADB_USER"]
-else:
-    mariadb_user = "testuser"
-
-if "MARIADB_PASSWORD" in os.environ:
-    mariadb_password = os.environ["MARIADB_PASSWORD"]
-else:
-    mariadb_password = "testpass"
-
-if "MARIADB_DB" in os.environ:
-    mariadb_db = os.environ["MARIADB_DB"]
-else:
-    mariadb_db = "findaprotest"
-
-schema = """\
-DROP TABLE event CASCADE;
-DROP TABLE category CASCADE;
-DROP TABLE movement CASCADE;
-DROP TABLE organization CASCADE;
-
-CREATE TABLE category (
-    id INT UNSIGNED PRIMARY KEY,
-    name TEXT
-);
-
-CREATE TABLE movement (
-    id INT UNSIGNED PRIMARY KEY,
-    name TEXT,
-    date BIGINT,
-    description TEXT,
-    link TEXT
-);
-
-CREATE TABLE organization (
-    id INT UNSIGNED PRIMARY KEY,
-    name TEXT,
-    description TEXT,
-    link TEXT
-);
-
-CREATE TABLE event (
-    id INT UNSIGNED PRIMARY KEY,
-    movement_id INT UNSIGNED,
-    category_id INT UNSIGNED,
-    organization_id INT UNSIGNED,
-    name TEXT,
-    event_time BIGINT,
-    created_time BIGINT,
-    updated_time BIGINT,
-    city TEXT,
-    state TEXT,
-    location TEXT,
-    description TEXT,
-    tags TEXT,
-    link TEXT,
-    estimated_size INT,
-    actual_size INT,
-    CONSTRAINT fk_category_id FOREIGN KEY (category_id) REFERENCES category (id),
-    CONSTRAINT fk_movement_id FOREIGN KEY (movement_id) REFERENCES movement (id),
-    CONSTRAINT fk_organization_id FOREIGN KEY (organization_id) REFERENCES organization (id)
-);
-"""
-
-db = pymysql.connect(host=mariadb_host,
-                      user=mariadb_user,
-                      passwd=mariadb_password,
-                      db=mariadb_db,
-                      local_infile=1)
-
-cursor = db.cursor()
-
-print "Recreating tables..."
-cursor.execute(schema)
-
-print "Getting categories from meetup api..."
+print("Getting categories from meetup api...")
 categories = requests.get('https://api.meetup.com/find/topic_categories?&sign=true&photo-host=public').json()
 
-print "Inserting categories into mariadb..."
-insert_category = "INSERT INTO `category` (`id`, `name`) VALUES (%s, %s)"
-for category in categories:
-    cursor.execute(insert_category, (category['id'], category['name']))
+print("Getting topics from meetup...")
+topics = requests.get('https://api.meetup.com/find/topics?photo-host=public&query=protest&sign=true&key=' + meetup_api_key).json()
 
-db.commit()
-cursor.close()
+print("Calling FindAProtest API to insert topics")
+for topic in topics:
+    response = requests.post('https://findaprotest.herokuapp.com/api/generic/movement',
+            data = {
+                'name': topic['name'],
+                'description': topic['description'],
+                'date': int(time.time()),
+                'link': 'https://www.meetup.com/topics/' + topic['urlkey'] + '/'
+            })
+    print(topic['name'])
+
+print("Getting events from meetup...")
+events = requests.get('https://api.meetup.com/2/open_events?and_text=False&country=us&offset=0&city=Gainesville&format=json&limited_events=False&state=fl&photo-host=public&page=500&radius=25.0&desc=False&status=upcoming&sign=true&key=' + meetup_api_key).json()
+
+# This currently results in 500s from Dave's API...investigate
+print ("Calling FindAProtest API to insert events")
+for event in events['results']:
+    response = requests.post('https://findaprotest.herokuapp.com/api/generic/event',
+            data = {
+                'name': event['group']['name'],
+                'description': event['description'],
+                'city': event['venue']['city'],
+                'state': event['venue']['state'],
+                'location': event['venue']['name'],
+                'summary': event['name'], # you can thank meetup for this confusing name field
+                'eventTime': event['time'],
+                'createdTime': event['created'],
+                'updatedTime': event['updated'],
+                'link': event['event_url'],
+                'estimatedSize': event['yes_rsvp_count'],
+                'actualSize': event['yes_rsvp_count']
+            })
+    print(response.text)
+    print(event['group']['name'])
