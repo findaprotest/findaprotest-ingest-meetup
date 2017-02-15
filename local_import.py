@@ -1,7 +1,6 @@
 import os
 import requests
 import json
-import time
 
 if "MEETUP_API_KEY" in os.environ:
     meetup_api_key = os.environ["MEETUP_API_KEY"]
@@ -24,12 +23,10 @@ for topic in topics:
 
 print("Getting events from meetup...")
 
-events = requests.get('https://api.meetup.com/2/open_events?and_text=False&country=us&offset=0&city=Gainesville&format=json&limited_events=False&state=fl&photo-host=public&page=500&radius=25.0&desc=False&status=upcoming&sign=true&key=' + meetup_api_key).json()
+events = requests.get('https://api.meetup.com/find/events?&sign=true&photo-host=public&lon=-82.333445&lat=29.648591&key=' + meetup_api_key).json()
 
-# This currently results in 500s from Dave's API...investigate
 print ("Calling FindAProtest API to insert events")
-for event in events['results']:
-    print(event['venue'] if 'venue' in event else "Unknown")
+for event in events:
     response = requests.post('https://findaprotest.herokuapp.com/api/generic/event',
             data = {
                 'name': event['group']['name'],
@@ -38,12 +35,8 @@ for event in events['results']:
                 'state': event['venue']['state'] if 'venue' in event and 'state' in event['venue'] else "FL",
                 'location': event['venue']['name'] if 'venue' in event and 'name' in event['venue'] else "Unknown",
                 'summary': event['name'] if 'name' in event else "Unknown", # you can thank meetup for this confusing name field
-                'eventTime': event['time'] / 1000 if 'time' in event else "Unknown",
-                'createdTime': event['created'] / 1000 if 'created' in event else "Unknown",
-                'updatedTime': event['updated'] / 1000 if 'updated' in event else "Unknown",
                 'link': event['event_url'] if 'event_url' in event else "Unknown",
                 'estimatedSize': event['yes_rsvp_count'] if 'yes_rsvp_count' in event else "Unknown",
                 'actualSize': event['yes_rsvp_count'] if 'yes_rsvp_count' in event else "Unknown"
             })
-    print(response.text)
     print(event['group']['name'])
